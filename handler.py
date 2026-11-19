@@ -11,6 +11,9 @@ import urllib.parse
 import binascii # Base64 에러 처리를 위해 import
 import subprocess
 import time
+import shutil
+from pathlib import Path
+from tempfile import TemporaryDirectory
 # 로깅 설정
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
@@ -18,6 +21,7 @@ logger = logging.getLogger(__name__)
 
 server_address = os.getenv('SERVER_ADDRESS', '127.0.0.1')
 client_id = str(uuid.uuid4())
+COMFY_INPUT_DIR = Path("/ComfyUI/input")
 def to_nearest_multiple_of_16(value):
     """주어진 값을 가장 가까운 16의 배수로 보정, 최소 16 보장"""
     try:
@@ -144,33 +148,47 @@ def load_workflow(workflow_path):
     with open(workflow_path, 'r') as file:
         return json.load(file)
 
+def comfy_input_name(path):
+    input_dir = COMFY_INPUT_DIR.resolve()
+    resolved = (input_dir / path).resolve()
+    try:
+        return resolved.relative_to(input_dir).as_posix()
+    except ValueError as exc:
+        raise ValueError("Image path must be inside the ComfyUI input directory") from exc
+
+
 def handler(job):
+    COMFY_INPUT_DIR.mkdir(parents=True, exist_ok=True)
+    with TemporaryDirectory(prefix="task_", dir=COMFY_INPUT_DIR) as task_dir:
+        return generate_video(job, task_dir)
+
+
+def generate_video(job, task_dir):
     job_input = job.get("input", {})
 
     logger.info(f"Received job input: {job_input}")
-    task_id = f"task_{uuid.uuid4()}"
 
     # 이미지 입력 처리 (image_path, image_url, image_base64 중 하나만 사용)
     image_path = None
     if "image_path" in job_input:
-        image_path = process_input(job_input["image_path"], task_id, "input_image.jpg", "path")
+        image_path = process_input(job_input["image_path"], task_dir, "input_image.jpg", "path")
     elif "image_url" in job_input:
-        image_path = process_input(job_input["image_url"], task_id, "input_image.jpg", "url")
+        image_path = process_input(job_input["image_url"], task_dir, "input_image.jpg", "url")
     elif "image_base64" in job_input:
-        image_path = process_input(job_input["image_base64"], task_id, "input_image.jpg", "base64")
+        image_path = process_input(job_input["image_base64"], task_dir, "input_image.jpg", "base64")
     else:
         # 기본값 사용
-        image_path = "/example_image.png"
+        image_path = shutil.copyfile("/example_image.png", Path(task_dir) / "example_image.png")
         logger.info("기본 이미지 파일을 사용합니다: /example_image.png")
 
     # 엔드 이미지 입력 처리 (end_image_path, end_image_url, end_image_base64 중 하나만 사용)
     end_image_path_local = None
     if "end_image_path" in job_input:
-        end_image_path_local = process_input(job_input["end_image_path"], task_id, "end_image.jpg", "path")
+        end_image_path_local = process_input(job_input["end_image_path"], task_dir, "end_image.jpg", "path")
     elif "end_image_url" in job_input:
-        end_image_path_local = process_input(job_input["end_image_url"], task_id, "end_image.jpg", "url")
+        end_image_path_local = process_input(job_input["end_image_url"], task_dir, "end_image.jpg", "url")
     elif "end_image_base64" in job_input:
-        end_image_path_local = process_input(job_input["end_image_base64"], task_id, "end_image.jpg", "base64")
+        end_image_path_local = process_input(job_input["end_image_base64"], task_dir, "end_image.jpg", "base64")
     
     # LoRA 설정 확인 - 배열로 받아서 처리
     lora_pairs = job_input.get("lora_pairs", [])
@@ -190,7 +208,7 @@ def handler(job):
     length = job_input.get("length", 81)
     steps = job_input.get("steps", 10)
 
-    prompt["244"]["inputs"]["image"] = image_path
+    prompt["244"]["inputs"]["image"] = comfy_input_name(image_path)
     prompt["541"]["inputs"]["num_frames"] = length
     prompt["135"]["inputs"]["positive_prompt"] = job_input["prompt"]
     prompt["135"]["inputs"]["negative_prompt"] = job_input.get("negative_prompt", "bright tones, overexposed, static, blurred details, subtitles, style, works, paintings, images, static, overall gray, worst quality, low quality, JPEG compression residue, ugly, incomplete, extra fingers, poorly drawn hands, poorly drawn faces, deformed, disfigured, misshapen limbs, fused fingers, still picture, messy background, three legs, many people in the background, walking backwards")
@@ -220,7 +238,7 @@ def handler(job):
 
     # 엔드 이미지가 있는 경우 617번 노드에 경로 적용 (FLF2V 전용)
     if end_image_path_local:
-        prompt["617"]["inputs"]["image"] = end_image_path_local
+        prompt["617"]["inputs"]["image"] = comfy_input_name(end_image_path_local)
     
     # LoRA 설정 적용 - HIGH LoRA는 노드 279, LOW LoRA는 노드 553
     if lora_count > 0:
