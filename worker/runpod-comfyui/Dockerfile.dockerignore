@@ -1,0 +1,14 @@
+**
+!worker/
+!worker/runpod-comfyui/
+!worker/runpod-comfyui/Dockerfile
+!worker/runpod-comfyui/requirements.txt
+!worker/runpod-comfyui/install-h3-nodes.sh
+!worker/runpod-comfyui/extra-model-paths.yaml
+!worker/runpod-comfyui/handler.py
+!worker/runpod-comfyui/preflight.py
+!worker/runpod-comfyui/start.sh
+!src/
+!src/ai/
+!src/ai/providers/
+!src/ai/providers/minimax-h3-workflow.json
