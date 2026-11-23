@@ -5,7 +5,8 @@ comfy_root="${COMFY_ROOT:-/comfyui}"
 python="${COMFY_PYTHON:-python3}"
 export COMFY_URL="http://127.0.0.1:8188"
 
-comfy_args=(--listen 127.0.0.1 --port 8188)
+# 全局卷上的大模型提前读入内存，避免首轮推理时反复从卷读取映射页。
+comfy_args=(--listen 127.0.0.1 --port 8188 --disable-dynamic-vram --disable-mmap)
 if [[ -n "${COMFY_EXTRA_MODEL_PATHS_CONFIG:-}" ]]; then
   comfy_args+=(--extra-model-paths-config "$COMFY_EXTRA_MODEL_PATHS_CONFIG")
 fi
