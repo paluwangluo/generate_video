@@ -115,7 +115,7 @@ def log_comfy_timings(status):
     elif isinstance(start, int):
         log("comfy_timings", exec_s="unfinished")
     if isinstance(start, int) and isinstance(cached, int):
-        log("comfy_cached_after_s", round((cached - start) / 1000, 1))
+        log("comfy_cached_after_s", seconds=round((cached - start) / 1000, 1))
 
 
 def run_workflow(http, workflow):
@@ -143,7 +143,11 @@ def run_workflow(http, workflow):
             if status.get("status_str") == "error":
                 raise RuntimeError("ComfyUI execution failed. Check the worker's ComfyUI log.")
             if status.get("completed"):
-                log_comfy_timings(status)
+                # 计时只用于诊断,任何异常都不能影响成片回传。
+                try:
+                    log_comfy_timings(status)
+                except Exception as error:  # noqa: BLE001
+                    log("comfy_timings_failed", error=type(error).__name__)
                 # 节点 12 负责合成成片，VideoHelperSuite 在 gifs 字段里返回 MP4 文件信息。
                 for item in job.get("outputs", {}).get("12", {}).get("gifs", []):
                     if item.get("type") == "output" and item.get("filename", "").lower().endswith(".mp4"):
